@@ -1,17 +1,8 @@
 import Config
 
-# Configure your database
-#
-# The MIX_TEST_PARTITION environment variable can be used
-# to provide built-in test partitioning in CI environment.
-# Run `mix help test` for more information.
-config :slither_skills, SlitherSkills.Repo,
-  username: "postgres",
-  password: "postgres",
-  hostname: "localhost",
-  database: "slither_skills_test#{System.get_env("MIX_TEST_PARTITION")}",
-  pool: Ecto.Adapters.SQL.Sandbox,
-  pool_size: System.schedulers_online() * 2
+# Database access is opt-in in tests so game and web logic can be tested
+# without a running PostgreSQL server.
+config :slither_skills, start_repo: false
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.

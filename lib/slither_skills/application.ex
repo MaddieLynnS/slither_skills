@@ -9,7 +9,6 @@ defmodule SlitherSkills.Application do
   def start(_type, _args) do
     children = [
       SlitherSkillsWeb.Telemetry,
-      SlitherSkills.Repo,
       {DNSCluster, query: Application.get_env(:slither_skills, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: SlitherSkills.PubSub},
       # Start a worker by calling: SlitherSkills.Worker.start_link(arg)
@@ -17,6 +16,13 @@ defmodule SlitherSkills.Application do
       # Start to serve requests, typically the last entry
       SlitherSkillsWeb.Endpoint
     ]
+
+    children =
+      if Application.get_env(:slither_skills, :start_repo, true) do
+        [SlitherSkills.Repo | children]
+      else
+        children
+      end
 
     # See https://elixir.hexdocs.pm/Supervisor.html
     # for other strategies and supported options
