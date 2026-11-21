@@ -72,6 +72,11 @@ defmodule SlitherSkills.SnakeArena.Game do
     end)
   end
 
+  @doc "Returns whether a coordinate is inside the playable part of the arena."
+  @spec playable_position?(t(), coordinate()) :: boolean()
+  def playable_position?(%__MODULE__{} = game, position),
+    do: in_playable_area?(game, position)
+
   @doc """
   Advances every living snake by one cell.
 
@@ -86,6 +91,16 @@ defmodule SlitherSkills.SnakeArena.Game do
       do: game
 
   def tick(%__MODULE__{} = game, direction_picker, fruit_picker) do
+    game = remove_dead_snakes(game)
+
+    if map_size(game.snakes) == 0 do
+      %{game | status: :finished, tick: game.tick + 1}
+    else
+      advance_tick(game, direction_picker, fruit_picker)
+    end
+  end
+
+  defp advance_tick(%__MODULE__{} = game, direction_picker, fruit_picker) do
     living_snakes = living_snakes(game)
 
     directions =
@@ -123,6 +138,16 @@ defmodule SlitherSkills.SnakeArena.Game do
          %{snake | body: projected_body(snake, head, growth_now), growth_pending: growth_pending}}
       end)
 
+    dead_snakes =
+      living_snakes
+      |> Enum.filter(fn {id, _snake} -> MapSet.member?(collision_ids, id) end)
+      |> Map.new(fn {id, snake} -> {id, %{snake | status: :dead}} end)
+
+    next_snakes =
+      game.snakes
+      |> Map.merge(dead_snakes)
+      |> Map.merge(survivors)
+
     eaten_ids =
       survivors
       |> Enum.flat_map(fn {_id, snake} ->
@@ -137,21 +162,18 @@ defmodule SlitherSkills.SnakeArena.Game do
     fruit_count = max(game.fruit_count, map_size(remaining_fruits))
     fruits = replenish_fruits(game, remaining_fruits, fruit_count, fruit_picker, eaten_ids)
 
-    status =
-      if map_size(survivors) == 0 and map_size(game.snakes) > 0 do
-        :finished
-      else
-        :running
-      end
-
     %{
       game
-      | snakes: survivors,
+      | snakes: next_snakes,
         fruits: fruits,
         fruit_count: fruit_count,
         tick: game.tick + 1,
-        status: status
+        status: :running
     }
+  end
+
+  defp remove_dead_snakes(%__MODULE__{} = game) do
+    %{game | snakes: Map.filter(game.snakes, fn {_id, snake} -> snake.status != :dead end)}
   end
 
   defp living_snakes(%__MODULE__{snakes: snakes}) do

@@ -2,6 +2,7 @@ defmodule SlitherSkills.SnakeArena.GameTest do
   use ExUnit.Case, async: true
 
   alias SlitherSkills.SnakeArena.Fruit
+  alias SlitherSkills.SnakeArena.Bots
   alias SlitherSkills.SnakeArena.Game
   alias SlitherSkills.SnakeArena.Snake
 
@@ -35,10 +36,12 @@ defmodule SlitherSkills.SnakeArena.GameTest do
 
   test "a snake dies when it reaches the outer border" do
     game = game_with([snake(:one, [{1, 3}, {2, 3}, {3, 3}], :left)])
-    updated = Game.tick(game, &keep_direction/3, &no_fruit/2)
+    dead = Game.tick(game, &keep_direction/3, &no_fruit/2)
+    updated = Game.tick(dead, &keep_direction/3, &no_fruit/2)
 
     assert updated.snakes == %{}
     assert updated.status == :finished
+    assert dead.snakes.one.status == :dead
   end
 
   test "a snake dies when it collides with its own body" do
@@ -47,7 +50,8 @@ defmodule SlitherSkills.SnakeArena.GameTest do
 
     updated = Game.tick(game, &keep_direction/3, &no_fruit/2)
 
-    assert updated.snakes == %{}
+    assert updated.snakes.one.status == :dead
+    assert Game.tick(updated, &keep_direction/3, &no_fruit/2).snakes == %{}
   end
 
   test "both snakes die when their heads target the same cell" do
@@ -55,10 +59,13 @@ defmodule SlitherSkills.SnakeArena.GameTest do
     second = snake(:second, [{5, 3}], :left, :blue)
     game = game_with([first, second])
 
-    updated = Game.tick(game, &keep_direction/3, &no_fruit/2)
+    dead = Game.tick(game, &keep_direction/3, &no_fruit/2)
+    updated = Game.tick(dead, &keep_direction/3, &no_fruit/2)
 
     assert updated.snakes == %{}
     assert updated.status == :finished
+    assert dead.snakes.first.status == :dead
+    assert dead.snakes.second.status == :dead
   end
 
   test "a snake dies when it hits another snake, but the other survives" do
@@ -69,7 +76,11 @@ defmodule SlitherSkills.SnakeArena.GameTest do
     updated = Game.tick(game, &keep_direction/3, &no_fruit/2)
 
     assert Map.has_key?(updated.snakes, :second)
-    refute Map.has_key?(updated.snakes, :first)
+    assert updated.snakes.first.status == :dead
+
+    cleaned = Game.tick(updated, &keep_direction/3, &no_fruit/2)
+    refute Map.has_key?(cleaned.snakes, :first)
+    assert Map.has_key?(cleaned.snakes, :second)
   end
 
   test "a departing tail cell is safe to enter" do
@@ -114,7 +125,82 @@ defmodule SlitherSkills.SnakeArena.GameTest do
     assert Game.tick(game, &keep_direction/3, &no_fruit/2) == game
 
     running = Game.add_snake(game, snake(:one, [{1, 3}], :left))
-    finished = Game.tick(running, &keep_direction/3, &no_fruit/2)
+    dead = Game.tick(running, &keep_direction/3, &no_fruit/2)
+    finished = Game.tick(dead, &keep_direction/3, &no_fruit/2)
     assert finished.status == :finished
+  end
+
+  test "adding a snake to a waiting game starts it" do
+    game = Game.new(width: 7, height: 7, fruit_count: 0)
+    updated = Game.add_snake(game, snake(:one, [{3, 3}]))
+
+    assert updated.status == :running
+    assert Map.has_key?(updated.snakes, :one)
+  end
+
+  test "adding a snake to a finished game has no effect" do
+    game = Game.new(width: 7, height: 7, fruit_count: 0)
+    finished = Map.put(game, :status, :finished)
+    updated = Game.add_snake(finished, snake(:one, [{3, 3}]))
+
+    assert updated == finished
+  end
+
+  test "a finished game does not advance" do
+    game = Game.new(width: 7, height: 7, fruit_count: 0)
+    finished = Map.put(game, :status, :finished)
+
+    assert Game.tick(finished, &keep_direction/3, &no_fruit/2) == finished
+  end
+
+  test "an invalid reverse direction falls back to the current direction" do
+    game = game_with([snake(:one, [{3, 3}, {2, 3}, {1, 3}], :right)])
+    reverse = fn _game, _snake, _safe_directions -> :left end
+    updated = Game.tick(game, reverse, &no_fruit/2)
+
+    assert updated.snakes.one.body == [{4, 3}, {3, 3}, {2, 3}]
+  end
+
+  test "a bot keeps its direction when no safe direction exists" do
+    game = game_with([snake(:one, [{1, 1}], :up)], %{}, width: 3, height: 3)
+    picker = Bots.direction_picker(fn _choices -> flunk("should not choose a direction") end)
+
+    dead = Game.tick(game, picker, &no_fruit/2)
+
+    assert dead.snakes.one.status == :dead
+  end
+
+  test "a new bot game contains five non-overlapping bots" do
+    choose_first = fn choices -> hd(choices) end
+    game = Bots.new_game(random_fun: choose_first)
+    snakes = Map.values(game.snakes)
+    body_cells = Enum.flat_map(snakes, & &1.body)
+
+    assert game.status == :running
+    assert length(snakes) == 5
+    assert Enum.uniq(body_cells) == body_cells
+    assert Enum.all?(snakes, &(&1.color in SlitherSkills.SnakeArena.Colors.all()))
+  end
+
+  test "twenty bots can be added without crashing" do
+    choose_first = fn choices -> hd(choices) end
+    game = Bots.new_game(bot_count: 20, random_fun: choose_first)
+
+    assert map_size(game.snakes) == 20
+  end
+
+  test "a deterministic bot simulation advances many ticks" do
+    choose_first = fn choices -> hd(choices) end
+    game = Bots.new_game(random_fun: choose_first)
+    direction_picker = Bots.direction_picker(choose_first)
+
+    simulated =
+      Enum.reduce(1..50, game, fn _, game ->
+        Game.tick(game, direction_picker, &no_fruit/2)
+      end)
+
+    assert simulated.tick > 0
+    assert simulated.tick <= 50
+    assert simulated.status in [:running, :finished]
   end
 end
