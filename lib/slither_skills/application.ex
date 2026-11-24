@@ -8,6 +8,8 @@ defmodule SlitherSkills.Application do
   @impl true
   def start(_type, _args) do
     children = [
+      {Registry, keys: :unique, name: SlitherSkills.SnakeArena.Registry},
+      SlitherSkills.SnakeArena.GameSupervisor,
       SlitherSkillsWeb.Telemetry,
       {DNSCluster, query: Application.get_env(:slither_skills, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: SlitherSkills.PubSub},
