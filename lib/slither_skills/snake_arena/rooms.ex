@@ -2,6 +2,7 @@ defmodule SlitherSkills.SnakeArena.Rooms do
   @moduledoc "Public room lifecycle operations."
 
   alias SlitherSkills.SnakeArena.GameSupervisor
+  alias SlitherSkills.SnakeArena.Game
   alias SlitherSkills.SnakeArena.Registry
   alias SlitherSkills.SnakeArena.RoomSupervisor
 
@@ -15,6 +16,15 @@ defmodule SlitherSkills.SnakeArena.Rooms do
   @doc "Looks up a room process by its ID."
   @spec lookup(term()) :: {:ok, pid()} | :error
   def lookup(room_id), do: Registry.lookup(room_id)
+
+  @doc "Returns the current game state for a room."
+  @spec state(term()) :: {:ok, Game.t()} | {:error, :not_found}
+  def state(room_id) do
+    case lookup(room_id) do
+      {:ok, game_pid} -> {:ok, GenServer.call(game_pid, :state)}
+      :error -> {:error, :not_found}
+    end
+  end
 
   @doc "Stops a room by its ID."
   @spec stop(term()) :: :ok | {:error, term()}

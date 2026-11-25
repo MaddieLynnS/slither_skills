@@ -21,8 +21,8 @@ defmodule SlitherSkills.SnakeArena.Game do
   @type fruit_picker ::
           (term(), [coordinate()] -> {Colors.color(), coordinate()} | :none)
 
-  defstruct width: 20,
-            height: 20,
+  defstruct width: 40,
+            height: 40,
             snakes: %{},
             fruits: %{},
             fruit_count: @default_fruit_count,
@@ -42,9 +42,10 @@ defmodule SlitherSkills.SnakeArena.Game do
   @doc "Creates a game and fills it with as many fruits as possible."
   @spec new(keyword()) :: t()
   def new(opts \\ []) do
-    width = Keyword.get(opts, :width, 20)
-    height = Keyword.get(opts, :height, 20)
-    fruit_count = Keyword.get(opts, :fruit_count, @default_fruit_count)
+    defaults = %__MODULE__{}
+    width = Keyword.get(opts, :width, defaults.width)
+    height = Keyword.get(opts, :height, defaults.height)
+    fruit_count = Keyword.get(opts, :fruit_count, defaults.fruit_count)
     fruit_picker = Keyword.get(opts, :fruit_picker, &default_fruit_choice/2)
 
     game = %__MODULE__{width: width, height: height, fruit_count: fruit_count}

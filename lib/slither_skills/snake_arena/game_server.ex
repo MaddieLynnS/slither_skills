@@ -16,6 +16,7 @@ defmodule SlitherSkills.SnakeArena.GameServer do
 
   @default_bot_count 5
   @default_tick_interval 100
+  @default_finished_timeout 30_000
 
   @doc false
   def start_link(opts) do
@@ -25,7 +26,9 @@ defmodule SlitherSkills.SnakeArena.GameServer do
   @impl true
   def init(opts) do
     room_id = Keyword.fetch!(opts, :room_id)
+    room_supervisor = Keyword.fetch!(opts, :room_supervisor)
     tick_interval = Keyword.get(opts, :tick_interval, @default_tick_interval)
+    finished_timeout = Keyword.get(opts, :finished_timeout, @default_finished_timeout)
     bot_count = Keyword.get(opts, :bot_count, @default_bot_count)
     seed = Keyword.get(opts, :seed, default_seed())
 
@@ -48,7 +51,10 @@ defmodule SlitherSkills.SnakeArena.GameServer do
            room_id: room_id,
            game: game,
            tick_interval: tick_interval,
-           timer_ref: timer_ref
+           timer_ref: timer_ref,
+           finished_timeout: finished_timeout,
+           finished_timer_ref: nil,
+           room_supervisor: room_supervisor
          }}
 
       {:error, reason} ->
@@ -65,14 +71,29 @@ defmodule SlitherSkills.SnakeArena.GameServer do
   def handle_info(:tick, state) do
     direction_picker = Bots.direction_picker(&random_choice/1)
     game = Game.tick(state.game, direction_picker, &random_fruit_choice/2)
-    timer_ref = schedule_tick(state.tick_interval)
 
-    {:noreply, %{state | game: game, timer_ref: timer_ref}}
+    if game.status == :finished do
+      cancel_timer(state.timer_ref)
+      finished_timer_ref = Process.send_after(self(), :finished_timeout, state.finished_timeout)
+      {:noreply, %{state | game: game, timer_ref: nil, finished_timer_ref: finished_timer_ref}}
+    else
+      timer_ref = schedule_tick(state.tick_interval)
+      {:noreply, %{state | game: game, timer_ref: timer_ref}}
+    end
+  end
+
+  @impl true
+  def handle_info(:finished_timeout, state) do
+    _ = Supervisor.stop(state.room_supervisor, :normal)
+    {:stop, :normal, state}
   end
 
   defp schedule_tick(interval) when is_integer(interval) and interval >= 0 do
     Process.send_after(self(), :tick, interval)
   end
+
+  defp cancel_timer(nil), do: :ok
+  defp cancel_timer(timer_ref), do: Process.cancel_timer(timer_ref)
 
   defp random_fruit_choice(_fruit_id, []) do
     :none

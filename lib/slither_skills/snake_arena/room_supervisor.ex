@@ -11,12 +11,23 @@ defmodule SlitherSkills.SnakeArena.RoomSupervisor do
     Supervisor.start_link(__MODULE__, opts)
   end
 
+  @doc false
+  @spec child_spec(keyword()) :: Supervisor.child_spec()
+  def child_spec(opts) do
+    %{
+      id: __MODULE__,
+      start: {__MODULE__, :start_link, [opts]},
+      type: :supervisor,
+      restart: :transient
+    }
+  end
+
   @impl true
   def init(opts) do
     room_id = Keyword.fetch!(opts, :room_id)
 
     children = [
-      {GameServer, Keyword.put(opts, :room_id, room_id)},
+      {GameServer, Keyword.merge(opts, room_id: room_id, room_supervisor: self())},
       {PlayerSupervisor, [room_id: room_id]}
     ]
 

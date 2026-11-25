@@ -36,6 +36,12 @@ defmodule SlitherSkills.SnakeArena.RoomsTest do
              _ ->
                false
            end)
+
+    assert {:ok, %Game{fruit_count: 0}} = Rooms.state(room_id)
+  end
+
+  test "state returns not found for a missing room" do
+    assert Rooms.state({:missing_room, make_ref()}) == {:error, :not_found}
   end
 
   test "duplicate room IDs are rejected", %{room_id: room_id} do
@@ -111,6 +117,35 @@ defmodule SlitherSkills.SnakeArena.RoomsTest do
     assert GenServer.call(second_game, :state).tick == 0
   end
 
+  test "a finished room shuts down after its configurable timeout", %{room_id: room_id} do
+    {:ok, _room_supervisor} =
+      Rooms.start(
+        room_id,
+        bot_count: 1,
+        tick_interval: 60_000,
+        finished_timeout: 10,
+        game_opts: [width: 5, height: 5, fruit_count: 0]
+      )
+
+    {:ok, game_pid} = Rooms.lookup(room_id)
+
+    {finished_state, _attempts} =
+      Enum.reduce_while(1..100, {nil, 0}, fn attempt, {_state, _count} ->
+        send(game_pid, :tick)
+        _ = :sys.get_state(game_pid)
+        state = GenServer.call(game_pid, :state)
+
+        if state.status == :finished do
+          {:halt, {state, attempt}}
+        else
+          {:cont, {state, attempt}}
+        end
+      end)
+
+    assert finished_state.status == :finished
+    assert await_room(room_id, 50) == :error
+  end
+
   defp child_pid(supervisor, child_module) do
     {^child_module, pid, _type, _modules} =
       Enum.find(Supervisor.which_children(supervisor), fn {id, _pid, _type, _modules} ->
@@ -136,4 +171,19 @@ defmodule SlitherSkills.SnakeArena.RoomsTest do
         end
     end
   end
+
+  defp await_room(room_id, attempts) when attempts > 0 do
+    case Rooms.lookup(room_id) do
+      :error ->
+        :error
+
+      {:ok, _pid} ->
+        receive do
+        after
+          10 -> await_room(room_id, attempts - 1)
+        end
+    end
+  end
+
+  defp await_room(_room_id, 0), do: :found
 end
