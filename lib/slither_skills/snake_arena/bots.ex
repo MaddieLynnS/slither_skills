@@ -28,7 +28,11 @@ defmodule SlitherSkills.SnakeArena.Bots do
 
   @doc "Adds as many valid bot snakes as possible to an existing game."
   @spec add_bots(Game.t(), non_neg_integer(), random_fun()) :: Game.t()
-  def add_bots(game, count \\ @default_bot_count, random_fun \\ &Enum.random/1) do
+  def add_bots(game, count \\ @default_bot_count, random_fun \\ &Enum.random/1)
+
+  def add_bots(game, count, _random_fun) when count <= 0, do: game
+
+  def add_bots(game, count, random_fun) do
     Enum.reduce(1..count, game, fn id, game ->
       case new_snake(game, {:bot, id}, random_fun) do
         {:ok, snake} -> Game.add_snake(game, snake)
